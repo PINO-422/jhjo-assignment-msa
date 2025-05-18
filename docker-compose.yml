@@ -1,0 +1,91 @@
+
+services:
+
+  # MongoDB 서비스: 데이터베이스를 담당합니다.
+  mongodb:
+    image: mongo:latest # 최신 MongoDB 공식 이미지를 사용합니다.
+    container_name: event-reward-mongodb # 컨테이너 이름을 명확하게 지정합니다.
+    ports:
+      - "27017:27017" # 로컬의 27017 포트를 컨테이너의 MongoDB 기본 포트(27017)에 연결합니다.
+    environment: # MongoDB 컨테이너 내부 설정
+      MONGO_INITDB_ROOT_USERNAME: admin # MongoDB 관리자 사용자 이름 설정
+      MONGO_INITDB_ROOT_PASSWORD: admin00 # MongoDB 관리자 비밀번호 설정 (개발 환경용)
+    volumes:
+      - mongodb_data:/data/db # ✅✅✅ 수정! 이름 붙은 볼륨 'mongodb_data'를 컨테이너 내부의 /data/db에 연결합니다. MongoDB 데이터가 여기에 저장됩니다.
+    networks:
+      - app_network # ✅ Auth, Event, Gateway 서비스와 같은 네트워크에 연결하여 서로 통신할 수 있게 합니다.
+
+  # Gateway Server 서비스: 클라이언트 요청을 받아 각 마이크로서비스로 라우팅합니다.
+  gateway:
+    build: # Dockerfile을 사용해서 이미지를 직접 빌드합니다.
+      context: ./server/gateway-server # gateway-server 폴더를 빌드 컨텍스트로 사용합니다.
+      dockerfile: Dockerfile # gateway-server 폴더 안의 Dockerfile을 사용합니다.
+      target: development # Dockerfile 안의 'development' 빌드 스테이지를 사용합니다.
+    container_name: gateway-server-container # 컨테이너 이름 지정
+    ports:
+      - "3000:3000" # 로컬 3000번 포트를 컨테이너 내부 3000번 포트에 연결합니다.
+    # volumes: # 개발 중 코드 변경사항을 바로 반영하기 위해 바인드 마운트를 사용합니다.
+      # - ./server/gateway-server:/app # 로컬 gateway-server 코드를 컨테이너의 /app에 마운트
+      # - /app/node_modules # node_modules는 로컬과 공유하지 않고 컨테이너 안에서 관리합니다. (바인드 마운트 충돌 방지)
+    env_file: # 컨테이너 환경 변수를 .env 파일에서 로드합니다.
+      - ./.env # gateway-server 폴더의 .env 파일 사용 (필요시 경로 수정)
+    depends_on: # 이 서비스가 시작되기 전에 필요한 서비스 지정
+      # - mongodb # 지금은 Auth/Event에 필요하지만, 예시로 추가 (실제 Gateway는 직접 MongoDB에 접근 안함)
+      - auth # Gateway는 보통 인증 서버에 의존합니다. (나중에 구현할 때 필요)
+      - event # Gateway는 보통 이벤트 서버에 의존합니다. (나중에 구현할 때 필요)
+    command: npm run start:dev # 컨테이너 실행 시 개발 모드로 NestJS 앱을 시작합니다. (Dockerfile의 CMD 오버라이드)
+    networks:
+      - app_network # ✅ 같은 네트워크 연결
+
+  # Auth Server 서비스: 사용자 인증 및 권한 부여를 담당합니다.
+  auth:
+    build:
+      context: ./server/auth-server # auth-server 폴더를 빌드 컨텍스트로 사용합니다.
+      dockerfile: Dockerfile # ✅ Auth Server 폴더에 있는 Dockerfile을 사용합니다. (이름 확인!)
+      target: development
+    container_name: auth-server-container
+    ports:
+      - "3001:3000" # 로컬 3001번 포트를 컨테이너 내부 3000번 포트에 연결합니다.
+    volumes: # 개발 중 코드 변경사항 반영
+      - ./server/auth-server:/app # ✅ Auth Server 로컬 코드를 컨테이너의 /app에 마운트
+      - /app/node_modules # node_modules는 컨테이너 안에서 관리
+    env_file:
+      - ./.env # 프로젝트 최상위 폴더의 .env 파일 사용
+    environment:
+      CHOKIDAR_USEPOLLING: "true" # Node.js 파일 변경 감지 오류 방지
+    depends_on:
+      - mongodb # Auth Server는 MongoDB를 사용하므로 의존성 설정
+    command: npm run start:dev
+    networks:
+      - app_network # ✅ 같은 네트워크 연결
+
+  # Event Server 서비스: 이벤트 생성, 조회 등 이벤트 관련 기능을 담당합니다.
+  event:
+    build:
+      context: ./server/event-server # event-server 폴더를 빌드 컨텍스트로 사용합니다.
+      dockerfile: Dockerfile # ✅✅✅ 수정! Event Server 폴더에 있는 Dockerfile을 사용합니다. (이름 확인!)
+      target: development
+    container_name: event-server-container
+    ports:
+      - "3002:3000" # ✅✅✅ 수정! 로컬 3002번 포트를 컨테이너 내부 3000번 포트에 연결합니다. (Auth Server와 포트 충돌 방지)
+    volumes: # 개발 중 코드 변경사항 반영
+      - ./server/event-server:/app # ✅✅✅ 수정! Event Server 로컬 코드를 컨테이너의 /app에 마운트
+      - /app/node_modules # node_modules는 컨테이너 안에서 관리
+    env_file:
+      - ./.env # 프로젝트 최상위 폴더의 .env 파일 사용
+    environment:
+      CHOKIDAR_USEPOLLING: "true" # Node.js 파일 변경 감지 오류 방지
+    depends_on:
+      - mongodb # Event Server는 MongoDB를 사용하므로 의존성 설정
+    command: npm run start:dev
+    networks:
+      - app_network # ✅✅✅ 추가! Event Server도 같은 네트워크에 연결합니다.
+
+# 네트워크 정의: 서비스들이 서로 통신할 수 있는 가상 네트워크를 생성합니다.
+networks:
+  app_network:
+    driver: bridge # 브릿지 네트워크 드라이버 사용
+
+# 볼륨 정의: 컨테이너 데이터를 영구적으로 저장할 볼륨을 정의합니다.
+volumes:
+  mongodb_data: # ✅✅✅ 수정! MongoDB 서비스에서 사용하는 볼륨 이름과 일치하게 정의합니다.

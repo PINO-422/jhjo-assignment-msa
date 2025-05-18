@@ -1,0 +1,5 @@
+{
+    "accessibility.verbosity.terminal": false,
+    "accessibility.accessibleView.closeOnKeyPress": false,
+    "accessibility.verbosity.debug": false
+}
